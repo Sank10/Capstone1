@@ -1,0 +1,493 @@
+import random 
+import matplotlib.pyplot as plt
+import math
+import numpy as np
+from sklearn.cluster import KMeans
+import pprint
+
+class wsn:
+    def __init__(self,**kwargs):
+        
+        self.actions = [0,1,2] # 0=Sleep,1=Transmit,2=Dead
+        self.n_actions = len(self.actions)
+        self.reward = 10
+        self.noreward = 0
+        self.NodesLists = self.cn(20)
+        self.p_node=[]
+        self.b_node=[]
+
+    def step(self,action):
+        
+        if action == 0:
+
+                for i in range(1,len(self.NodesLists)):
+                    
+                    if(self.NodesLists[i]['isDead'] == False and self.NodesLists[i]['wantToSendData'] == False):
+                            self.NodesLists[i]['energy'] -= self.idleEnergy(10000)
+                            done = False
+                    
+                    elif(self.NodesLists[i]['isDead'] == True):
+                        done = True
+                        return(2,0,done)
+                    
+                    else :
+                        done = False 
+                        return(1,10,done)
+                    
+                    
+                return(0,0,done)
+        
+        elif action == 1:
+            done = False
+            return(2, 10, done)
+        
+        else :
+            
+            if all(self.NodesLists[i]['isDead'] == True for i in range(1,len(self.NodesLists))):
+                done = True
+                return(2,0,done)
+            
+            for i in range(1,len(self.NodesLists)):
+                if(self.NodesLists[i]['energy'] <= self.NodesLists[i]['threshold']):
+                    self.NodesLists[i]['isDead'] = True
+                    done = True
+            
+                else:
+                    done = False
+                    return(1,10,done)
+                
+            return(0, 0, done)
+        
+    def start(self):
+        
+        factor=5
+        X=[]
+        Y=[]
+
+        random.seed(10)
+
+        number_of_points = 20
+        for i in range(number_of_points):
+            X.append(-50*factor+100*factor*random.random())
+            Y.append(-50*factor+100*factor*random.random())
+        
+        base_stnX = 400
+        base_stnY = 600
+        
+       #K Means
+
+        df=[]
+        for i in range(len(self.NodesLists)-1):
+            df.append([X[i],Y[i]])
+
+        kmeans = KMeans(n_clusters=2)
+        kmeans.fit(df)
+
+        for i in range(1,len(self.NodesLists)):
+            if kmeans.labels_[i-1] == 1:
+                self.b_node.append(self.NodesLists[i])
+            else:
+                self.p_node.append(self.NodesLists[i])
+        
+        maxRound = 50
+
+        for i in range(maxRound):
+            self.b_node = self.calculateClusterHead(self.b_node,i)
+            for j in range(1,len(self.b_node)):
+                if(self.b_node[j]['isClusterHead']==True):
+                    (x,y)=(self.b_node[j]['location']['x'],self.b_node[j]['location']['y'])
+
+        plt.scatter(X, Y,c=kmeans.labels_)
+        plt.scatter(base_stnX,base_stnY,c='red')
+        plt.scatter(x,y,c='blue')
+        plt.show()    
+        
+
+    def cn(self,x):
+        
+        factor=5
+        X=[]
+        Y=[]
+
+        random.seed(10)
+
+        number_of_points = x
+        
+        for i in range(number_of_points):
+                X.append(-50*factor+100*factor*random.random())
+                Y.append(-50*factor+100*factor*random.random())
+        
+        NodesList=[]
+        NodesList.append([])
+        
+
+        for i in range(len(X)):
+    
+            Node = {'id':0,'energy': 0,'location':{'x':0,'y': 0,},'isClusterHead': False,'isDead':False,'threshold':0.1,'lastTimeCH':-1,'wantToSendData':False}
+            Node['id'] = i+1
+            Node['energy'] = 5   # Energy of Each node is 5 Joules
+            Node['location']['x'] = X[i]
+            Node['location']['y'] = Y[i]
+            Node['isClusterHead']=False
+    
+            NodesList.append(Node)
+        return(NodesList)
+    
+# Function to calculate energy by nodes to transmit a packet between two nodes 
+    def transmissionEnergy(self,k,d):
+        return 50*pow(10,-6)*k+10*pow(10,-9)*(d**2)*k 
+
+# Function to calculate energy consummed by node while receiving any packet
+    def receivingEnergy(self,k):
+        return 50*pow(10,-6)*k 
+
+# Function to calculate idle energy
+    def idleEnergy(self,k):
+        return 40*pow(10,-6)*k 
+        
+    def reset(self):
+        return 0
+    
+    def render(self): 
+        pass
+   
+    def print_value_all(self,q_table):
+        
+        for i in range(3):
+            for j in range(3):
+                print(q_table[i][j], end = " ")
+            print()
+            
+
+    def calculateClusterHead(self,b_node,roundNum):
+    
+        P=0.08  
+        x=(P*(roundNum%round(1/P)))
+        if(roundNum%(1/P)==0):
+            for i in range(1,len(b_node)):
+                b_node[i]['lastTimeCH'] = -1
+        T=(P/(1-x))
+
+        flag = True
+        cnt = 0
+        
+        for i in range(1,len(b_node)):
+            if((b_node[i]['lastTimeCH']==-1 and b_node[i]['isDead']==False) or (b_node[i]['lastTimeCH']!=-1 and roundNum>=b_node[i]['lastTimeCH']+(1/P) and b_node[i]['energy']>=b_node[i]['threshold'] and b_node[i]['isDead']==False) ):
+                random_num=random.random()
+                cnt+=1
+                if(random_num<=T):
+                    flag = False
+                    b_node[i]['isClusterHead']=True
+                    b_node[i]['lastTimeCH']=roundNum
+    
+        while(flag==True and cnt!=0):
+        
+            for i in range(1,len(b_node)):
+                if( (b_node[i]['lastTimeCH']==-1 and b_node[i]['isDead']==False ) or (b_node[i]['lastTimeCH']!=-1 and roundNum>=b_node[i]['lastTimeCH']+(1/P) and b_node[i]['energy']>=b_node[i]['threshold'] ) ):
+                    random_num=random.random()
+                    if(random_num<=T):
+                        flag = False
+                        b_node[i]['isClusterHead']=True
+                        b_node[i]['lastTimeCH']=roundNum
+        return (b_node)
+    
+    def euclid_dist(a1,a2,b1,b2):
+        return (math.sqrt((a1-b1)**2+(a2-b2)**2))
+
+class QLearningAgent:
+    
+    def __init__(self, actions):
+        
+        self.actions = actions
+        self.learning_rate = 0.05
+        self.discount_factor = 0.9
+        self.epsilon = 0.1
+
+        self.q_table = {0:[0.0,0.0,0.0],
+                        1:[0.0,0.0,0.0],
+                        2:[0.0,0.0,0.0]}
+        
+    
+    def learn(self, state, action, reward, next_state):
+        
+        current_q = self.q_table[state][action]
+        
+        new_q = reward + self.discount_factor * max(self.q_table[next_state])
+        self.q_table[state][action] += self.learning_rate * (new_q - current_q)
+
+    def get_action(self, state):
+        if np.random.rand() < self.epsilon:
+            
+            action = np.random.choice(self.actions)
+        else:
+          
+            state_action = self.q_table[state]
+            action = self.arg_max(state_action)
+        return action
+
+    def arg_max(self,state_action):
+        max_index_list = []
+        max_value = state_action[0]
+        for index, value in enumerate(state_action):
+            if value > max_value:
+                max_index_list.clear()
+                max_value = value
+                max_index_list.append(index)
+            elif value == max_value:
+                max_index_list.append(index)
+        return random.choice(max_index_list)
+
+if __name__ == "__main__":
+    
+    env = wsn()
+    env.start()
+    agent = QLearningAgent(actions=list(range(env.n_actions)))
+
+    for episode in range(25):
+        state = env.reset()
+
+        while True:
+            env.render()
+
+            action = agent.get_action(state)
+            print(action)
+            next_state, reward, done = env.step(action)
+
+
+            agent.learn(state, action, reward, next_state)
+
+            state = next_state
+            
+            env.print_value_all(agent.q_table)
+
+            if done == True :
+                break    
+                
+    print("*********x************")
+    print("The Node List is")
+    print("*********x************")
+    
+    pprint.pprint(env.NodesLists)
+
+def euclid_dist(a1,a2,b1,b2):
+    return (math.sqrt((a1-b1)**2+(a2-b2)**2))
+
+def calculateClusterHead(NodesList,roundNum):
+    
+    P=0.08  
+    x=(P*(roundNum%round(1/P)))
+    if(roundNum%(1/P)==0):
+        for i in range(1,len(NodesList)):
+            NodesList[i]['lastTimeCH'] = -1
+    T=(P/(1-x))
+    print(T,x)
+    
+    count_=0
+    flag = True
+    cnt = 0
+
+    for i in range(1,len(NodesList)):
+        if( (NodesList[i]['lastTimeCH']==-1 and NodesList[i]['isDead']==False) or (NodesList[i]['lastTimeCH']!=-1 and roundNum>=NodesList[i]['lastTimeCH']+(1/P) and NodesList[i]['energy']>=NodesList[i]['threshold'] and NodesList[i]['isDead']==False) ):
+            random_num=random.random()
+            cnt+=1
+            if(random_num<=T):
+                flag = False
+                count_+=1
+                NodesList[i]['isClusterHead']=True
+                NodesList[i]['lastTimeCH']=roundNum
+    print("Total number of candidate for selection:",cnt)
+    
+    while(flag==True and cnt!=0):
+        
+        for i in range(1,len(NodesList)):
+            if( (NodesList[i]['lastTimeCH']==-1 and NodesList[i]['isDead']==False) or (NodesList[i]['lastTimeCH']!=-1 and roundNum>=NodesList[i]['lastTimeCH']+(1/P) and NodesList[i]['energy']>=NodesList[i]['threshold']) ):
+                random_num=random.random()
+                if(random_num<=T):
+                    flag = False
+                    count_+=1
+                    NodesList[i]['isClusterHead']=True
+                    NodesList[i]['lastTimeCH']=roundNum
+    NodesList[0]=count_
+    return NodesList
+
+factor=5
+X=[]
+Y=[]
+
+random.seed(10)
+
+number_of_points = 20
+for i in range(number_of_points):
+    X.append(-50*factor+100*factor*random.random())
+    Y.append(-50*factor+100*factor*random.random())
+    
+base_stnX = 400
+base_stnY = 600
+
+NodesList=[]
+NodesList.append([])
+
+for i in range(len(X)):
+    
+    Node = {'id':0,'energy': 0,'location':{'x':0,'y': 0,},'isClusterHead': False,'isDead':False,'threshold':0.1,'lastTimeCH':-1,'wantToSendData':False}
+    Node['id'] = i+1
+    Node['energy'] = 5000    # Energy of Each node is 5 miliJoules
+    Node['location']['x'] = X[i]
+    Node['location']['y'] = Y[i]
+    Node['isClusterHead']=False
+    
+    NodesList.append(Node)
+
+#K Means
+
+df=[]
+for i in range(len(NodesList)-1):
+    df.append([X[i],Y[i]])
+
+kmeans = KMeans(n_clusters=2)
+kmeans.fit(df)
+
+plt.scatter(X, Y,c=kmeans.labels_)
+plt.scatter(base_stnX,base_stnY,c='red')
+
+len(kmeans.labels_)
+len(NodesList)
+
+p_node = []
+b_node = []
+
+for i in range(1,len(NodesList)):
+    if kmeans.labels_[i-1] == 0:
+        b_node.append(NodesList[i])
+    else:
+        p_node.append(NodesList[i])
+        
+        
+pprint.pprint(p_node)
+pprint.pprint(b_node)
+
+numberOfDeadNodesAxis=[]
+
+maxRound = 50
+
+for i in range(maxRound):
+    NodesList = calculateClusterHead(NodesList,i)
+    for j in range(1,len(NodesList)):
+        if(NodesList[j]['isClusterHead']==True):
+            (x,y)=(NodesList[j]['location']['x'],NodesList[j]['location']['y'])
+
+plt.scatter(X, Y,c=kmeans.labels_)
+plt.scatter(base_stnX,base_stnY,c='red')
+plt.scatter(x,y,c='blue')
+plt.show()
+
+d=[]
+for j in range(1,len(NodesList)):
+    d.append(euclid_dist(NodesList[j]['location']['x'],NodesList[j]['location']['y'],base_stnX,base_stnY))
+d
+
+dist1=[]
+for i in range(0,len(p_node)):
+    dist1.append(euclid_dist(p_node[i]['location']['x'],p_node[i]['location']['y'],base_stnX,base_stnY))
+
+dist1
+
+def totalenergy1(k,dist1):
+    trans_energy=50*pow(10,-6)*k+10*pow(10,-9)*(dist1**2)*k
+    recv_energy=50*pow(10,-6)*k
+    idle_energy=40*pow(10,-6)*k
+    total_energy1=trans_energy+recv_energy+idle_energy
+    return total_energy1
+
+t_energy1=[]
+for i in dist1:
+    result=totalenergy1(10000,i)
+    t_energy1.append(result)
+t_energy1
+
+numbers1=[]
+for number in range(0,len(p_node)):
+    numbers1.append(number)
+
+
+plt.plot(numbers1,t_energy1)
+plt.title("Energy Plot")
+plt.xlabel("Node number")
+plt.ylabel("Energy of node")
+
+b_node1={}
+for i in range(0,len(b_node)-1):
+    if b_node[i]['location']['x']!=x and b_node[i]['location']['y']!=y:
+        b_node1[i]=b_node[i]
+b_node1
+        
+
+b_node3=[]
+b_node4=[]
+p_node3=[]
+p_node4=[]
+dist3=[]
+dist4=[]
+dist2=[]
+for i in range(0,len(b_node1)):
+    if b_node1[i]['location']['x']<0:
+        b_node3.append(b_node1[i])
+    else:
+        b_node4.append(b_node1[i])
+for k in range(0,len(p_node)):
+    if p_node[k]['location']['x']<50:
+        p_node3.append(p_node[k])
+    else:
+        p_node4.append(p_node[k])
+for l in range(0,len(p_node3)):
+    random.seed(l)
+    r1=random.choice(b_node3)
+    dist3.append(euclid_dist(p_node3[l]['location']['x'],p_node3[l]['location']['y'],r1['location']['x'],r1['location']['y']))
+for j in range(0,len(p_node4)):
+    random.seed(j)
+    r2=random.choice(b_node4)
+    dist4.append(euclid_dist(p_node4[j]['location']['x'],p_node4[j]['location']['y'],r2['location']['x'],r2['location']['y']))
+dist2=dist3+dist4
+dist2
+
+t_energy2=[]
+for i in dist2:
+    result=totalenergy1(10000,i)
+    t_energy2.append(result)
+t_energy2
+
+plt.plot(numbers1,t_energy2)
+plt.title("Energy Plot")
+plt.xlabel("Node number")
+plt.ylabel("Energy of node")
+
+dist5=[]
+for i in range(0,len(b_node1)):
+    dist5.append(euclid_dist(b_node1[i]['location']['x'],b_node1[i]['location']['y'],x,y))
+dist5
+
+t_energy3=[]
+for i in dist5:
+    result=totalenergy1(10000,i)
+    t_energy3.append(result)
+t_energy3
+
+numbers2=[]
+for number in range(0,len(b_node1)):
+    numbers2.append(number)
+
+
+plt.plot(numbers2,t_energy3)
+plt.title("Energy Plot")
+plt.xlabel("Node number")
+plt.ylabel("Energy of node")
+
+dist6=[]
+dist6.append(euclid_dist(x,y,base_stnX,base_stnY))
+dist6
+
+t_energy4=0
+for i in dist6:
+    result=totalenergy1(10000,i)
+    t_energy4=result
+print(t_energy4)
